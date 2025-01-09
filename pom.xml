@@ -30,36 +30,24 @@
             <artifactId>httpclient</artifactId>
             <version>4.5.14</version>
         </dependency>
+        <!-- SLF4J API -->
         <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-api</artifactId>
-            <version>2.23.1</version>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>2.0.9</version>
         </dependency>
+
+        <!-- Logback implementation -->
         <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-core</artifactId>
-            <version>2.23.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-slf4j2-impl</artifactId>
-            <version>2.23.1</version>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.6</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/org.json/json -->
         <dependency>
             <groupId>org.json</groupId>
             <artifactId>json</artifactId>
             <version>20240303</version>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <version>2.0.9</version>
-        </dependency>
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>1.4.11</version>
         </dependency>
     </dependencies>
     <build>
@@ -73,7 +61,7 @@
                         <manifest>
                             <addClasspath>true</addClasspath>
                             <classpathPrefix>lib/</classpathPrefix>
-                            <mainClass>com.your.package.MainClass</mainClass>
+                            <mainClass>org.example.PingSnowSync</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
@@ -107,6 +95,7 @@
                         <configuration>
                             <target>
                                 <mkdir dir="${project.build.directory}/out"/>
+                                <mkdir dir="${project.build.directory}/out/logs"/>
                                 <copy todir="${project.build.directory}/out">
                                     <fileset dir="${project.build.directory}">
                                         <include name="*.jar"/>
@@ -120,6 +109,13 @@
                                 <copy todir="${project.build.directory}/out/config">
                                     <fileset dir="${basedir}/config"/>
                                 </copy>
+                                <copy todir="${project.build.directory}/out"
+                                    file="${basedir}/run.sh"/>
+                                <copy file="${project.build.directory}/${project.artifactId}-${project.version}.jar"
+                                      todir="${project.build.directory}/out/lib"/>
+                                <copy file="${project.build.directory}/${project.artifactId}-${project.version}.jar"
+                                      todir="${project.build.directory}/out/lib"/>
+                                <delete file="${project.build.directory}/out/${project.artifactId}-${project.version}.jar"/>
                             </target>
                         </configuration>
                     </execution>
@@ -127,4 +123,11 @@
             </plugin>
         </plugins>
     </build>
+    <repositories>
+        <repository>
+            <id>maven_central</id>
+            <name>Maven Central</name>
+            <url>https://repo.maven.apache.org/maven2/</url>
+        </repository>
+    </repositories>
 </project>

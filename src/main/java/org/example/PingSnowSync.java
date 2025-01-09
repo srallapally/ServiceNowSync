@@ -28,6 +28,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+import static java.lang.System.exit;
+
 public class PingSnowSync {
     private static String pingAccessToken;
     private static Properties config;
@@ -62,31 +64,46 @@ public class PingSnowSync {
         System.out.println("Usage: PingSnowSync -run -properties <full path to config.properties> -testmode true|false");
     }
     public static void main(String[] arguments) throws Exception {
-        if (arguments.length % 3 != 1) {
-            usage();
-            return;
-        }
-        String cmd = arguments[0];
-        if (cmd.equalsIgnoreCase("-run")) {
-            String propertiesFileName = getArgumentValue(arguments, "-properties");
-            logger.debug("Running PingSnowSync with properties file: {}", propertiesFileName);
-            if (!isBlank(propertiesFileName)) {
-                config = loadConfig(new File(propertiesFileName));
-                String testmode = getArgumentValue(arguments, "-testmode");
-                if (testmode.equalsIgnoreCase("true") || testmode.equalsIgnoreCase("false")) {
-                    TESTMODE = Boolean.valueOf(testmode);
-                }
-                logger.debug("Calling Authenticate");
-                authenticatePing();
-                authenticateSnow();
-                logger.debug("Syncing");
-                syncCatalogItems();
-
-            } else {
-                usage();
+        boolean hasRun = false;
+        boolean hasProperties = false;
+        boolean hasTestmode = false;
+        String propertiesFileName = null;
+        String testmode = "true";
+        for(int i = 0; i < arguments.length; i++) {
+            String arg = arguments[i].toLowerCase();
+            switch(arg) {
+                case "-run":
+                    hasRun = true;
+                    break;
+                case "-properties":
+                    hasProperties = true;
+                    propertiesFileName = arguments[i+1];
+                    break;
+                case "-testmode":
+                    testmode = arguments[i+1];
+                    if (testmode.equalsIgnoreCase("true") || testmode.equalsIgnoreCase("false")) {
+                        TESTMODE = Boolean.valueOf(testmode);
+                        hasTestmode = TESTMODE;
+                    }
+                    break;
             }
         }
-
+        if(!hasRun || !hasProperties || propertiesFileName == null ) {
+            System.err.println("Error: -run and -properties with value are mandatory");
+            usage();
+            exit(-1);
+        }
+        logger.debug("Running PingSnowSync with properties file: {}", propertiesFileName);
+       if(!isBlank(propertiesFileName)) {
+           config = loadConfig(new File(propertiesFileName));
+           logger.debug("Calling Authenticate");
+           authenticatePing();
+           authenticateSnow();
+           logger.debug("Syncing");
+           syncCatalogItems();
+       } else {
+           usage();
+       }
     }
     private static Properties loadConfig(final File configPath) throws Exception {
         Properties config = new Properties();
@@ -174,7 +191,9 @@ public class PingSnowSync {
                 Map<String, Object> entitlementMap = new HashMap<>();
                 // Extract values based on mappings
                 for (String key : mappingProperties.stringPropertyNames()) {
+                    logger.debug("Entitlement key: {}", key);
                     String jsonPath = mappingProperties.getProperty(key);
+                    logger.debug("Entitlement jsonPath: {}", jsonPath);
                     Object value = extractValue(item, jsonPath);
                     entitlementMap.put(key, value);
                 }
@@ -185,13 +204,16 @@ public class PingSnowSync {
 
         for (Map<String, Object> entitlement : entitlements) {
             String snowUrl = config.getProperty("snow.tenanturl")+config.getProperty("snow.catalog.query");
+            logger.debug("snowUrl: {}", snowUrl);
             String catalogAttr = String.valueOf(config.getProperty("snow.linkingAttribute"));
+            logger.debug("catalogAttr: {}", catalogAttr);
             snowUrl = snowUrl.replace("%snow.linkingAttribute%",catalogAttr);
+            logger.debug("snowUrl: {}", snowUrl);
             String catalogVal = (String) entitlement.get(catalogAttr);
-            System.out.println(catalogAttr+": "+catalogVal);
+            logger.debug("catalogVal: {}", catalogVal);
             if(catalogVal != null)
                 snowUrl = snowUrl.replace("%ping.catalog.id%",catalogVal);
-                logger.debug("Snow URL: {}", snowUrl);
+                logger.debug("After replacing Snow URL: {}", snowUrl);
             //System.out.println("Url:  " + snowUrl);
             String snowResponse = executeSnowQuery(snowUrl);
             logger.debug("Snow Response: {}", snowResponse);
