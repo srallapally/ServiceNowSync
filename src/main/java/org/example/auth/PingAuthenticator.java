@@ -27,7 +27,7 @@ public class PingAuthenticator implements Authenticator<String> {
         String fullUrl = pingAuthUrl + "?grant_type=client_credentials" +
                 "&client_id=" + URLEncoder.encode(config.getProperty("ping.client.id"), StandardCharsets.UTF_8) +
                 "&client_secret=" + URLEncoder.encode(config.getProperty("ping.client.secret"), StandardCharsets.UTF_8) +
-                "&scope=" + URLEncoder.encode("fr:idm:* fr:iga:*", StandardCharsets.UTF_8);
+                "&scope=" + URLEncoder.encode(config.getProperty("ping.client.scope"), StandardCharsets.UTF_8);
 
         logger.debug("Authenticating with Ping Identity at URL: {}", pingAuthUrl);
 
