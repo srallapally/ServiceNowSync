@@ -10,11 +10,14 @@ else
     echo Please install Java and set the JAVA_HOME accordingly
     exit 1
 fi
+# Get the third argument for properties file
+PROPERTIES_FILE="${3:-./config/config.properties}"  # Use default if not provided
+TESTMODE="${5:-false}"  # Use default if not provided
 
 MAIN_CLASS=org.example.PingSnowSync
 CLASSPATH="./lib/*"
 exec $JAVA -classpath "$CLASSPATH" \
 -Dlogback.configurationFile=./config/logback.xml \
 $MAIN_CLASS -run \
--properties "./config/config.properties" \
--testmode true
+-properties "$PROPERTIES_FILE" \
+-testmode "$TESTMODE"

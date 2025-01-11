@@ -21,7 +21,6 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -37,38 +36,19 @@ public class PingSnowSync {
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final Logger logger = LoggerFactory.getLogger(PingSnowSync.class);
     private static Boolean TESTMODE = false;
-    private static final List<String> REQUIRED_CONFIG_KEYS = Arrays.asList(
-            "ping.client.id",
-            "ping.client.secret",
-            "ping.tenant.url",
-            "ping.app.query",
-            "ping.app.query.body",
-            "ping.entitlement.query",
-            "ping.entitlement.query.body",
-            "ping.role.query",
-            "ping.role.query.body",
-            "ping.lastrundate",
-            "ping.app.glossary.mapping",
-            "ping.role.glossary.mapping",
-            "ping.entitlement.glossary.mapping",
-            "snow.username",
-            "snow.password",
-            "snow.catalogId",
-            "snow.app.category",
-            "snow.entitlement.category",
-            "snow.role.category",
-            "snow.linkingAttribute",
-            "snow.tenanturl"
-    );
+    private static Boolean syncApp = false;
+    private static Boolean syncRole = false;
+    private static Boolean syncEntitlement = false;
+
     private static void usage() {
         System.out.println("Usage: PingSnowSync -run -properties <full path to config.properties> -testmode true|false");
     }
     public static void main(String[] arguments) throws Exception {
         boolean hasRun = false;
         boolean hasProperties = false;
-        boolean hasTestmode = false;
         String propertiesFileName = null;
         String testmode = "true";
+
         for(int i = 0; i < arguments.length; i++) {
             String arg = arguments[i].toLowerCase();
             switch(arg) {
@@ -81,9 +61,12 @@ public class PingSnowSync {
                     break;
                 case "-testmode":
                     testmode = arguments[i+1];
+                    logger.debug("Using testmode '{}'", testmode);
                     if (testmode.equalsIgnoreCase("true") || testmode.equalsIgnoreCase("false")) {
                         TESTMODE = Boolean.valueOf(testmode);
-                        hasTestmode = TESTMODE;
+                        if(TESTMODE){
+                            logger.debug("Testmode enabled. Catalog operations won't be performed");
+                        }
                     }
                     break;
             }
@@ -96,11 +79,33 @@ public class PingSnowSync {
         logger.debug("Running PingSnowSync with properties file: {}", propertiesFileName);
        if(!isBlank(propertiesFileName)) {
            config = loadConfig(new File(propertiesFileName));
+           logger.debug("Checking catalog items to sync");
+           String checkSync = null;
+           checkSync = config.getProperty("sync.app");
+           if (checkSync.equalsIgnoreCase("true") || checkSync.equalsIgnoreCase("false")) {
+               syncApp = Boolean.valueOf(checkSync);
+           }
+           checkSync = config.getProperty("sync.entitlement");
+           if (checkSync.equalsIgnoreCase("true") || checkSync.equalsIgnoreCase("false")) {
+               syncEntitlement = Boolean.valueOf(checkSync);
+           }
+           checkSync = config.getProperty("sync.role");
+           if (checkSync.equalsIgnoreCase("true") || checkSync.equalsIgnoreCase("false")) {
+               syncRole = Boolean.valueOf(checkSync);
+           }
            logger.debug("Calling Authenticate");
            authenticatePing();
            authenticateSnow();
            logger.debug("Syncing");
-           syncCatalogItems();
+           if(syncEntitlement) {
+               syncCatalogItems("Entitlement");
+           }
+           if(syncApp){
+               syncCatalogItems("App");
+           }
+           if(syncRole){
+               syncCatalogItems("Role");
+           }
        } else {
            usage();
        }
@@ -148,7 +153,7 @@ public class PingSnowSync {
                 .build();
         logger.debug("Authenticating with Service Now");
     }
-    public static void syncCatalogItems() throws Exception {
+    public static void syncCatalogItems(String entity) throws Exception {
        // syncItems("app", queries.getProperty("app_query"),
        //         queries.getProperty("app_payload"), appTemplatePath);
        // syncItems("role", queries.getProperty("role_query"),
@@ -321,33 +326,17 @@ public class PingSnowSync {
         for (Map.Entry<String, Object> entry : entitlement.entrySet()) {
             templ = templ.replace("%" + entry.getKey() + "%", String.valueOf(entry.getValue()));
         }
+        // workflow
+        templ = templ.replace("%snow.entitlement.workflow_id%", config.getProperty("snow.entitlement.workflow_id"));
+        //icon and picture
+        templ = templ.replace("%snow.entitlement_icon_id%", config.getProperty("snow.entitlement_icon_id"));
         return templ;
     }
-    private static String getArgumentValue(String[] arguments, String keyName) {
-        if (arguments.length >= 2) {
-            for (int i = 0; i < arguments.length - 1; i++) {
-                String name = arguments[i];
-                String value = arguments[i + 1];
-                if (name.equalsIgnoreCase(keyName)) {
-                    return value;
-                }
-            }
-        }
-        return null;
-    }
+
     public static boolean isEmpty(final String val) {
         return val == null || (val.isEmpty());
     }
     public static boolean isBlank(final String val) {
         return val == null || isEmpty(val.trim());
-    }
-    public static class ConfigurationException extends Exception {
-        public ConfigurationException(String message) {
-            super(message);
-        }
-
-        public ConfigurationException(String message, Throwable cause) {
-            super(message, cause);
-        }
     }
 }
