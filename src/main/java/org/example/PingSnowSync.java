@@ -15,6 +15,10 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
 
+import org.example.auth.PingAuthenticator;
+import org.example.auth.SnowAuthenticator;
+import org.example.client.SnowClient;
+import org.example.sync.EntitlementSyncHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.json.JSONObject;
@@ -32,14 +36,15 @@ import static java.lang.System.exit;
 public class PingSnowSync {
     private static String pingAccessToken;
     private static Properties config;
-    private static CloseableHttpClient snowClient;
+    private static SnowClient snowClient;
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final Logger logger = LoggerFactory.getLogger(PingSnowSync.class);
     private static Boolean TESTMODE = false;
     private static Boolean syncApp = false;
     private static Boolean syncRole = false;
     private static Boolean syncEntitlement = false;
-
+    private static PingAuthenticator pingAuthenticator = null;
+    private static SnowAuthenticator snowAuthenticator = null;
     private static void usage() {
         System.out.println("Usage: PingSnowSync -run -properties <full path to config.properties> -testmode true|false");
     }
@@ -48,7 +53,6 @@ public class PingSnowSync {
         boolean hasProperties = false;
         String propertiesFileName = null;
         String testmode = "true";
-
         for(int i = 0; i < arguments.length; i++) {
             String arg = arguments[i].toLowerCase();
             switch(arg) {
@@ -71,6 +75,7 @@ public class PingSnowSync {
                     break;
             }
         }
+
         if(!hasRun || !hasProperties || propertiesFileName == null ) {
             System.err.println("Error: -run and -properties with value are mandatory");
             usage();
@@ -93,19 +98,31 @@ public class PingSnowSync {
            if (checkSync.equalsIgnoreCase("true") || checkSync.equalsIgnoreCase("false")) {
                syncRole = Boolean.valueOf(checkSync);
            }
+           if(!syncEntitlement && !syncRole && !syncApp) {
+               throw new RuntimeException("Error: At least one entity must be specified");
+           }
            logger.debug("Calling Authenticate");
-           authenticatePing();
-           authenticateSnow();
+
+           pingAuthenticator= new PingAuthenticator(config);
+           snowAuthenticator = new SnowAuthenticator(config);
+           pingAccessToken = pingAuthenticator.authenticate();
+           snowClient = snowAuthenticator.authenticate();
+           if(pingAccessToken == null || snowClient == null) {
+               throw new RuntimeException("PingSnowSync failed to authenticate");
+           }
+
+           //authenticatePing();
+           //authenticateSnow();
            logger.debug("Syncing");
            if(syncEntitlement) {
-               syncCatalogItems("Entitlement");
+               new EntitlementSyncHandler(config,"entitlement",snowClient,pingAccessToken,TESTMODE).sync();
            }
-           if(syncApp){
-               syncCatalogItems("App");
-           }
-           if(syncRole){
-               syncCatalogItems("Role");
-           }
+           //if(syncApp){
+           //    syncAppCatalogItems(config);
+           //}
+           //if(syncRole){
+           //    syncRoleCatalogItems(config);
+           //}
        } else {
            usage();
        }
@@ -117,43 +134,66 @@ public class PingSnowSync {
             return config;
         }
     }
+    /*
+        private static void authenticatePing() throws Exception {
+            // Authenticate with Ping
+            String pingAuthUrl = config.getProperty("ping.tenant.url") + "/am/oauth2/alpha/access_token";
+            String fullUrl = pingAuthUrl + "?grant_type=client_credentials" +
+                    "&client_id=" + config.getProperty("ping.client.id") +
+                    "&client_secret=" + config.getProperty("ping.client.secret") +
+                    "&scope=" + URLEncoder.encode(config.getProperty("ping.client.scope"), StandardCharsets.UTF_8);
+            logger.debug("Authenticating with {}", fullUrl);
+            // Create HttpClient
+            HttpClient httpClient = HttpClients.createDefault();
+            // Create POST request
+            HttpPost request = new HttpPost(fullUrl);
+            // Execute request
+            HttpResponse response = httpClient.execute(request);
+            // Get response content
+            HttpEntity entity = response.getEntity();
+            String jsonResponse = EntityUtils.toString(entity);
+            logger.debug("Authenticated with {}", jsonResponse);
+            // Parse JSON response to get access token
+            JSONObject jsonObject = new JSONObject(jsonResponse);
+            pingAccessToken = jsonObject.getString("access_token");
+            logger.debug("Ping access token: {}", pingAccessToken);
+        }
 
-    private static void authenticatePing() throws Exception {
-        // Authenticate with Ping
-        String pingAuthUrl = config.getProperty("ping.tenant.url") + "/am/oauth2/alpha/access_token";
-        String fullUrl = pingAuthUrl + "?grant_type=client_credentials" +
-                "&client_id=" + config.getProperty("ping.client.id") +
-                "&client_secret=" + config.getProperty("ping.client.secret") +
-                "&scope=" + URLEncoder.encode("fr:idm:* fr:iga:*", "UTF-8");
-        logger.debug("Authenticating with {}", fullUrl);
-        // Create HttpClient
-        HttpClient httpClient = HttpClients.createDefault();
-        // Create POST request
-        HttpPost request = new HttpPost(fullUrl);
-        // Execute request
-        HttpResponse response = httpClient.execute(request);
-        // Get response content
-        HttpEntity entity = response.getEntity();
-        String jsonResponse = EntityUtils.toString(entity);
-        logger.debug("Authenticated with {}", jsonResponse);
-        // Parse JSON response to get access token
-        JSONObject jsonObject = new JSONObject(jsonResponse);
-        pingAccessToken = jsonObject.getString("access_token");
-        logger.debug("Ping access token: {}", pingAccessToken);
-    }
-    private static void authenticateSnow(){
-        CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
-        credentialsProvider.setCredentials(
-                AuthScope.ANY,
-                new UsernamePasswordCredentials(config.getProperty("snow.username"), config.getProperty("snow.password"))
-        );
+        private static void authenticateSnow(){
+            CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+            credentialsProvider.setCredentials(
+                    AuthScope.ANY,
+                    new UsernamePasswordCredentials(config.getProperty("snow.username"), config.getProperty("snow.password"))
+            );
 
-        snowClient = HttpClients.custom()
-                .setDefaultCredentialsProvider(credentialsProvider)
-                .build();
-        logger.debug("Authenticating with Service Now");
+            snowClient = HttpClients.custom()
+                    .setDefaultCredentialsProvider(credentialsProvider)
+                    .build();
+            logger.debug("Authenticating with Service Now");
+        }
+        */
+    public static void syncAppCatalogItems(Properties config) throws Exception {
+        // syncItems("app", queries.getProperty("app_query"),
+        //         queries.getProperty("app_payload"), appTemplatePath);
+        // syncItems("role", queries.getProperty("role_query"),
+        //         queries.getProperty("role_payload"), roleTemplatePath);
+        //syncItems("entitlement",
+        //        config.getProperty("ping.tenant.url")+ config.getProperty("ping.entitlement.query"),
+        //        config.getProperty("ping.entitlement.query.body"));
+        throw new UnsupportedOperationException();
     }
-    public static void syncCatalogItems(String entity) throws Exception {
+    public static void syncRoleCatalogItems(Properties config) throws Exception {
+        // syncItems("app", queries.getProperty("app_query"),
+        //         queries.getProperty("app_payload"), appTemplatePath);
+        // syncItems("role", queries.getProperty("role_query"),
+        //         queries.getProperty("role_payload"), roleTemplatePath);
+        //syncItems("entitlement",
+        //        config.getProperty("ping.tenant.url")+ config.getProperty("ping.entitlement.query"),
+        //        config.getProperty("ping.entitlement.query.body"));
+        throw new UnsupportedOperationException();
+    }
+    /*
+    public static void syncEntitlementCatalogItems(Properties config) throws Exception {
        // syncItems("app", queries.getProperty("app_query"),
        //         queries.getProperty("app_payload"), appTemplatePath);
        // syncItems("role", queries.getProperty("role_query"),
@@ -162,7 +202,7 @@ public class PingSnowSync {
                 config.getProperty("ping.tenant.url")+ config.getProperty("ping.entitlement.query"),
                 config.getProperty("ping.entitlement.query.body"));
     }
-
+*/
     private static void syncItems(String type, String queryTemplate, String queryBody) throws Exception {
         int offset = 0;
         boolean hasMore = true;
@@ -170,7 +210,7 @@ public class PingSnowSync {
         logger.debug("queryTemplate: {}", queryTemplate);
         logger.debug("queryBody: {}", queryBody);
         Properties mappingProperties = new Properties();
-        String mappingJson = config.getProperty("snow.catalog.mapping");
+        String mappingJson = config.getProperty("snow.entitlement.catalog.mapping");
         logger.debug("mappingJson: {}", mappingJson);
         mappingProperties = loadConfig(new File(mappingJson));
         while (hasMore) {
@@ -208,16 +248,16 @@ public class PingSnowSync {
         }
 
         for (Map<String, Object> entitlement : entitlements) {
-            String snowUrl = config.getProperty("snow.tenanturl")+config.getProperty("snow.catalog.query");
+            String snowUrl = config.getProperty("snow.tenanturl")+config.getProperty("snow.entitlement.catalog.query");
             logger.debug("snowUrl: {}", snowUrl);
-            String catalogAttr = String.valueOf(config.getProperty("snow.linkingAttribute"));
+            String catalogAttr = String.valueOf(config.getProperty("snow.entitlement.linkingAttribute"));
             logger.debug("catalogAttr: {}", catalogAttr);
-            snowUrl = snowUrl.replace("%snow.linkingAttribute%",catalogAttr);
+            snowUrl = snowUrl.replace("%snow.entitlement.linkingAttribute%",catalogAttr);
             logger.debug("snowUrl: {}", snowUrl);
             String catalogVal = (String) entitlement.get(catalogAttr);
             logger.debug("catalogVal: {}", catalogVal);
             if(catalogVal != null)
-                snowUrl = snowUrl.replace("%ping.catalog.id%",catalogVal);
+                snowUrl = snowUrl.replace("%ping.entitlement.catalog_id%",catalogVal);
                 logger.debug("After replacing Snow URL: {}", snowUrl);
             //System.out.println("Url:  " + snowUrl);
             String snowResponse = executeSnowQuery(snowUrl);
@@ -288,19 +328,26 @@ public class PingSnowSync {
         }
     }
     private static String executeSnowQuery(String url) throws Exception {
-        HttpGet request = new HttpGet(url);
+        return snowClient.executeGet(url);
+         /*
+         HttpGet request = new HttpGet(url);
         request.setHeader(HttpHeaders.ACCEPT, "application/json");
 
-        try (CloseableHttpResponse response = snowClient.execute(request)) {
+        try (CloseableHttpResponse response = snowClient.ex(request)) {
             return EntityUtils.toString(snowClient.execute(request).getEntity());
         }
+
+ */
     }
 
     private static String createSnowItem(String jsonBody) throws Exception {
         String snowUrl = config.getProperty("snow.tenanturl")+config.getProperty("snow.catalog.create");
         logger.debug("Snow URL: {}", snowUrl);
+        logger.debug("Creating Snow Item");
+        logger.debug("jsonBody: {}", jsonBody);
         if(!TESTMODE) {
             //System.out.println(snowUrl);
+            /*
             HttpPost post = new HttpPost(snowUrl);
             post.setHeader("Content-Type", "application/json");
             post.setHeader("Accept", "application/json");
@@ -308,8 +355,8 @@ public class PingSnowSync {
             StringEntity entity = new StringEntity(jsonBody);
             logger.debug("body:\n" + EntityUtils.toString(entity));
             post.setEntity(entity);
-            HttpResponse response = snowClient.execute(post);
-            return EntityUtils.toString(response.getEntity());
+            */
+            return snowClient.executePost(snowUrl,jsonBody);
         } else {
             logger.debug("Skipping snow item creation due to test mode");
         }

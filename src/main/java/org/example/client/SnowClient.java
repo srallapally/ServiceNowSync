@@ -48,4 +48,16 @@ public class SnowClient {
             return EntityUtils.toString(response.getEntity());
         }
     }
+
+    public String createSnowItem(String url, String jsonBody, Boolean testmode) throws Exception {
+        logger.debug("Snow URL: {}", url);
+        logger.debug("Creating Snow Item");
+        logger.debug("jsonBody: {}", jsonBody);
+        if(!testmode) {
+            return executePost(url, jsonBody);
+        } else {
+            logger.debug("Skipping snow item creation due to test mode");
+        }
+        return null;
+    }
 }
