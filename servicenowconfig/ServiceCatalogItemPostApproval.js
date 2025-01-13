@@ -11,7 +11,6 @@ try {
     var response = r.execute();
     var responseBody = JSON.parse(response.getBody());
     var access_token = responseBody.access_token;
-    gs.log("Access Token: "+ access_token,"Ping RITM Post Approval Info");
     // Get request item and catalog item details
     var details = "Requested Item Details:\n";
     var grReqItem = new GlideRecord('sc_req_item');
@@ -46,7 +45,6 @@ try {
     }
     var approver_hist = arr.join('\n');
     details += approver_hist + "\n";
-    gs.log("Request Details:\n"+ details,"Ping RITM Post Approval Info");
     // Invoke IGA Workflow
     var getUserRequest = new sn_ws.RESTMessageV2();
     getUserRequest.setLogLevel('All');
