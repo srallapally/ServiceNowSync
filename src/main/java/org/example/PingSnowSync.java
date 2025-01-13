@@ -19,6 +19,7 @@ import org.example.auth.PingAuthenticator;
 import org.example.auth.SnowAuthenticator;
 import org.example.client.SnowClient;
 import org.example.sync.EntitlementSyncHandler;
+import org.example.sync.RoleSyncHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.json.JSONObject;
@@ -120,9 +121,9 @@ public class PingSnowSync {
            //if(syncApp){
            //    syncAppCatalogItems(config);
            //}
-           //if(syncRole){
-           //    syncRoleCatalogItems(config);
-           //}
+           if(syncRole){
+               new RoleSyncHandler(config,"role",snowClient,pingAccessToken,TESTMODE).sync();
+           }
        } else {
            usage();
        }

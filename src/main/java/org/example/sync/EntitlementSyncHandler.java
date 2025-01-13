@@ -124,7 +124,7 @@ public class EntitlementSyncHandler extends SyncHandler {
         // workflow
         templ = templ.replace("%snow.entitlement.workflow_id%", config.getProperty("snow.entitlement.workflow_id"));
         //icon and picture
-        templ = templ.replace("%snow.entitlement_icon_id%", config.getProperty("snow.entitlement_icon_id"));
+        templ = templ.replace("%snow.entitlement.icon_id%", config.getProperty("snow.entitlement.icon_id"));
         return templ;
     }
 }
