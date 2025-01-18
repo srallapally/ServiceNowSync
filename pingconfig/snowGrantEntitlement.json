@@ -1,0 +1,301 @@
+{
+  "id": "snowGrantEntitlement",
+  "name": "SNOW Grant Entitlement",
+  "displayName": "SNOW Grant Entitlement",
+  "description": "SNOW Grant Entitlement",
+  "type": "provisioning",
+  "_rev": 4,
+  "steps": [
+    {
+      "name": "approvalTask-74cf85c35437",
+      "displayName": "Approval Task",
+      "type": "approvalTask",
+      "approvalTask": {
+        "nextStep": [
+          {
+            "condition": null,
+            "outcome": "EXPIRATION",
+            "step": null
+          },
+          {
+            "condition": null,
+            "outcome": "APPROVE",
+            "step": "scriptTask-3eab1948f1ec"
+          },
+          {
+            "condition": null,
+            "outcome": "REJECT",
+            "step": "scriptTask-aec6c36b3a45"
+          }
+        ],
+        "approvalMode": "any",
+        "actors": [
+          {
+            "id": {
+              "value": "\"managed/user/\" + ((requestIndex.entitlementOwner && requestIndex.entitlementOwner.length > 0) ? requestIndex.entitlementOwner[0].id : requestIndex.applicationOwner[0].id)",
+              "isExpression": true
+            },
+            "permissions": {
+              "approve": true,
+              "reject": true,
+              "reassign": true,
+              "modify": true,
+              "comment": true
+            }
+          }
+        ],
+        "events": {
+          "assignment": {
+            "notification": "requestAssigned"
+          },
+          "reassign": {
+            "notification": "requestReassigned"
+          },
+          "reminder": {
+            "notification": "requestReminder",
+            "frequency": 3,
+            "date": {
+              "isExpression": true,
+              "value": "(new Date(new Date().getTime()+(3*1*24*60*60*1000))).toISOString()"
+            }
+          },
+          "escalation": {
+            "notification": "requestEscalated",
+            "date": {
+              "isExpression": true,
+              "value": "(new Date(new Date().getTime()+(5*1*24*60*60*1000))).toISOString()"
+            },
+            "actors": [
+              {
+                "id": {
+                  "isExpression": true,
+                  "value": "\"managed/user/\" + ((requestIndex.entitlementOwner && requestIndex.entitlementOwner.length > 0) ? requestIndex.entitlementOwner[0].id : requestIndex.applicationOwner[0].id)"
+                }
+              }
+            ]
+          },
+          "expiration": {
+            "action": "reject",
+            "notification": "requestExpired",
+            "actors": [],
+            "date": {
+              "isExpression": true,
+              "value": "(new Date(new Date().getTime()+(7*24*60*60*1000))).toISOString()"
+            }
+          }
+        }
+      },
+      "approvalMode": "any"
+    },
+    {
+      "name": "scriptTask-3eab1948f1ec",
+      "displayName": "Entitlement Grant Validation",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": "exclusiveGateway-48e748c42994"
+          }
+        ],
+        "language": "javascript",
+        "script": "logger.info(\"Running entitlement grant request validation\");\n\nvar content = execution.getVariables();\nvar requestId = content.get('id');\nvar failureReason = null;\nvar applicationId = null;\nvar assignmentId = null;\nvar app = null;\nvar assignment = null;\nvar existingAccount = false;\n\ntry {\n  var requestObj = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\n  assignmentId = requestObj.request.custom.entitlementId;\n}\ncatch (e) {\n  failureReason = \"Validation failed: Error reading request with id \" + requestId;\n}\n// adding logging as a comment\nvar queryParams = {\n  \"_action\": \"comment\"\n}\n\ntry {\n  var entitlementObj = openidm.action('iga/governance/resource/' +  assignmentId, 'GET', {}, {});\n  applicationId = entitlementObj.application.id;\n}\ncatch (e) {\n  failureReason = \"Validation failed: Error getting application for request with id \" + requestId;\n}\n// Validation 1 - Check application exists\nif (!failureReason) {\n  try {\n    app = openidm.read('managed/alpha_application/' + applicationId);\n    if (!app) {\n      failureReason = \"Validation failed: Cannot find application with id \" + applicationId;\n    }\n  }\n  catch (e) {\n    failureReason = \"Validation failed: Error reading application with id \" + applicationId + \". Error message: \" + e.message;\n  }\n}\n\n// Validation 2 - Check entitlement exists\nif (!failureReason) {\n  try {\n    assignment = openidm.read('managed/alpha_assignment/' + assignmentId);\n    if (!assignment) {\n      failureReason = \"Validation failed: Cannot find assignment with id \" + assignmentId;\n    }\n  }\n  catch (e) {\n    failureReason = \"Validation failed: Error reading assignment with id \" + assignmentId + \". Error message: \" + e.message;\n  }\n}\n\n// Validation 3 - Check the user has application granted\nif (!failureReason) {\n  try {\n    var user = openidm.read('managed/alpha_user/' + requestObj.request.custom.userId, null, [ 'effectiveApplications' ]);\n    user.effectiveApplications.forEach(effectiveApp => {\n      if (effectiveApp._id === applicationId) {\n        existingAccount = true;\n      }\n    })\n  }\n  catch (e) {\n    failureReason = \"Validation failed: Unable to check existing applications of user with id \" + requestObj.user.id + \". Error message: \" + e.message;\n  }\n}\n\n// Validation 4 - If account does not exist, provision it\nif (!failureReason) {\n  if (!existingAccount) {\n    try {\n      var request = requestObj.request;\n      var payload = {\n        \"applicationId\": applicationId,\n        \"startDate\": request.common.startDate,\n        \"endDate\": request.common.endDate,\n        \"auditContext\": {},\n        \"grantType\": \"request\"\n      };\n      var queryParams = {\n        \"_action\": \"add\"\n      }\n\n      logger.info(\"Creating account: \" + payload);\n      var result = openidm.action('iga/governance/user/' +  requestObj.request.custom.userId + '/applications' , 'POST', payload,queryParams);\n    }\n    catch (e) {\n      failureReason = \"Validation failed: Error provisioning new account to user \" +  requestObj.request.custom.userId + \" for application \" + applicationId + \". Error message: \" + e.message;\n    }\n  }\n}\n\nif (failureReason) {\n  logger.info(\"Validation failed: \" + failureReason);\n}\nexecution.setVariable(\"failureReason\", failureReason); "
+      }
+    },
+    {
+      "name": "exclusiveGateway-48e748c42994",
+      "displayName": "Validation Gateway",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "failureReason == null",
+            "outcome": "validationFlowSuccess",
+            "step": "scriptTask-0359a9d77ee2"
+          },
+          {
+            "condition": "failureReason != null",
+            "outcome": "validationFlowFailure",
+            "step": "scriptTask-0b56191887de"
+          }
+        ],
+        "language": "javascript",
+        "script": "logger.info(\"This is exclusive gateway\");"
+      }
+    },
+    {
+      "name": "scriptTask-0b56191887de",
+      "displayName": "Entitlement Grant Validation Failure",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": null
+          }
+        ],
+        "language": "javascript",
+        "script": "var content = execution.getVariables();\nvar requestId = content.get('id');\nvar failureReason = content.get('failureReason');\n\nvar decision = {'outcome': 'not provisioned', 'status': 'complete', 'comment': failureReason, 'failure': true, 'decision': 'approved'};\nvar queryParams = { '_action': 'update'};\nopenidm.action('iga/governance/requests/' + requestId, 'POST', decision, queryParams);"
+      }
+    },
+    {
+      "name": "scriptTask-0359a9d77ee2",
+      "displayName": "Auto Provisioning",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": null
+          }
+        ],
+        "language": "javascript",
+        "script": "logger.info(\"Auto-Provisioning\");\n\nvar content = execution.getVariables();\nvar requestId = content.get('id');\nvar failureReason = null;\n\ntry {\n  var requestObj = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\n  logger.info(\"requestObj: \" + requestObj);\n}\ncatch (e) {\n  failureReason = \"Provisioning failed: Error reading request with id \" + requestId;\n}\n\nif(!failureReason) {\n  try {\n    var request = requestObj.request;\n    var payload = {\n      \"entitlementId\": request.custom.entitlementId,\n      \"startDate\": request.common.startDate,\n      \"endDate\": request.common.endDate,\n      \"auditContext\": {},\n      \"grantType\": \"request\"\n    };\n    var queryParams = {\n      \"_action\": \"add\"\n    }\n\n    var result = openidm.action('iga/governance/user/' + request.custom.userId + '/entitlements' , 'POST', payload,queryParams);\n  }\n  catch (e) {\n    failureReason = \"Provisioning failed: Error provisioning entitlement to user \" + request.custom.userId + \" for entitlement \" + request.custom.entitlementId + \". Error message: \" + e.message;\n  }\n  \n  var decision = {'status': 'complete', 'decision': 'approved'};\n  if (failureReason) {\n    decision.outcome = 'not provisioned';\n    decision.comment = failureReason;\n    decision.failure = true;\n  }\n  else {\n    decision.outcome = 'provisioned';\n  }\n\n  var queryParams = { '_action': 'update'};\n  openidm.action('iga/governance/requests/' + requestId, 'POST', decision, queryParams);\n  logger.info(\"Request \" + requestId + \" completed.\");\n}"
+      }
+    },
+    {
+      "name": "scriptTask-aec6c36b3a45",
+      "displayName": "Reject Request",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": null
+          }
+        ],
+        "language": "javascript",
+        "script": "logger.info(\"Rejecting request\");\n\nvar content = execution.getVariables();\nvar requestId = content.get('id');\n\nlogger.info(\"Execution Content: \" + content);\nvar requestIndex = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\nvar decision = {'outcome': 'denied', 'status': 'complete', 'decision': 'rejected'};\nvar queryParams = { '_action': 'update'};\nopenidm.action('iga/governance/requests/' + requestId, 'POST', decision, queryParams);"
+      }
+    },
+    {
+      "name": "scriptTask-e04f42607ba5",
+      "displayName": "Request Context Check",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": "exclusiveGateway-67a954f33919"
+          }
+        ],
+        "language": "javascript",
+        "script": "/*\nScript nodes are used to invoke APIs or execute business logic.\nYou can invoke governance APIs or IDM APIs.\nSee https://backstage.forgerock.com/docs/idcloud/latest/identity-governance/administration/workflow-configure.html for more details.\n\nScript nodes should return a single value and should have the\nlogic enclosed in a try-catch block.\n\nExample:\ntry {\n  var requestObj = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\n  applicationId = requestObj.application.id;\n}\ncatch (e) {\n  failureReason = 'Validation failed: Error reading request with id ' + requestId;\n}\n*/\nvar content = execution.getVariables();\nvar requestId = content.get('id');\nvar context = null;\nvar skipApproval = false;\nvar lineItemId = false;\ntry {\n  var requestObj = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\n  if (requestObj.request.common.context) {\n    context = requestObj.request.common.context.type;\n    if (context == 'admin' || context == 'service-now') {\n      skipApproval = true;\n    }\n  }\n}\ncatch (e) {\n  logger.info(\"Request Context Check failed \"+e.message);\n}\n\nlogger.info(\"Context: \" + context);\nexecution.setVariable(\"context\", context);\nexecution.setVariable(\"skipApproval\", skipApproval);"
+      }
+    },
+    {
+      "name": "scriptTask-e21178ab80f7",
+      "displayName": "Auto Approval",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": "scriptTask-3eab1948f1ec"
+          }
+        ],
+        "language": "javascript",
+        "script": "/*\nScript nodes are used to invoke APIs or execute business logic.\nYou can invoke governance APIs or IDM APIs.\nSee https://backstage.forgerock.com/docs/idcloud/latest/identity-governance/administration/workflow-configure.html for more details.\n\nScript nodes should return a single value and should have the\nlogic enclosed in a try-catch block.\n\nExample:\ntry {\n  var requestObj = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\n  applicationId = requestObj.application.id;\n}\ncatch (e) {\n  failureReason = 'Validation failed: Error reading request with id ' + requestId;\n}\n*/\nvar content = execution.getVariables();\nvar requestId = content.get('id');\nvar context = content.get('context');\nvar queryParams = {\n  \"_action\": \"update\"\n}\n\ntry {\n  var decision = {\n      \"decision\": \"approved\",\n      \"comment\": \"Request auto-approved due to request context: \" + context\n  }\n  openidm.action('iga/governance/requests/' + requestId, 'POST', decision, queryParams);\n}\ncatch (e) {\n  var failureReason = \"Failure updating decision on request. Error message: \" + e.message;\n  var update = {'comment': failureReason, 'failure': true};\n  openidm.action('iga/governance/requests/' + requestId, 'POST', update, queryParams);\n}"
+      }
+    },
+    {
+      "name": "exclusiveGateway-67a954f33919",
+      "displayName": "Context Gateway",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "skipApproval == true",
+            "outcome": "AutoApproval",
+            "step": "scriptTask-e21178ab80f7"
+          },
+          {
+            "condition": "skipApproval == false",
+            "outcome": "Approval",
+            "step": "approvalTask-74cf85c35437"
+          }
+        ],
+        "language": "javascript",
+        "script": "logger.info(\"This is exclusive gateway\");"
+      }
+    }
+  ],
+  "staticNodes": {
+    "startNode": {
+      "id": "startNode",
+      "x": 70,
+      "y": 140,
+      "connections": {
+        "start": "scriptTask-e04f42607ba5"
+      }
+    },
+    "endNode": {
+      "id": "endNode",
+      "x": 1936,
+      "y": 271,
+      "connections": null
+    },
+    "uiConfig": {
+      "approvalTask-74cf85c35437": {
+        "actors": [
+          {
+            "type": "script",
+            "id": {
+              "value": "\"managed/user/\" + ((requestIndex.entitlementOwner && requestIndex.entitlementOwner.length > 0) ? requestIndex.entitlementOwner[0].id : requestIndex.applicationOwner[0].id)",
+              "isExpression": true
+            }
+          }
+        ],
+        "events": {
+          "escalationType": "script",
+          "escalationDate": 5,
+          "escalationTimeSpan": "day(s)",
+          "reminderDate": 3,
+          "reminderTimeSpan": "day(s)"
+        },
+        "x": 722,
+        "y": 156
+      },
+      "scriptTask-3eab1948f1ec": {
+        "x": 957,
+        "y": 80.015625
+      },
+      "exclusiveGateway-48e748c42994": {
+        "x": 1254,
+        "y": 73.015625
+      },
+      "scriptTask-0b56191887de": {
+        "x": 1502,
+        "y": 197.015625
+      },
+      "scriptTask-0359a9d77ee2": {
+        "x": 1495,
+        "y": 104.015625
+      },
+      "scriptTask-aec6c36b3a45": {
+        "x": 964,
+        "y": 253.015625
+      },
+      "scriptTask-e04f42607ba5": {
+        "x": 186,
+        "y": 143.015625
+      },
+      "scriptTask-e21178ab80f7": {
+        "x": 716,
+        "y": 74.015625
+      },
+      "exclusiveGateway-67a954f33919": {
+        "x": 467,
+        "y": 121.015625
+      }
+    }
+  },
+  "status": "published",
+  "mutable": true
+}
