@@ -12,7 +12,7 @@ else
 fi
 # Get the third argument for properties file
 PROPERTIES_FILE="${3:-./config/config.properties}"  # Use default if not provided
-TESTMODE="${5:-false}"  # Use default if not provided
+TESTMODE="${5:-true}"  # Use default if not provided
 
 MAIN_CLASS=org.example.PingSnowSync
 CLASSPATH="./lib/*"
