@@ -2,6 +2,7 @@ package org.example.sync;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.http.util.EntityUtils;
 import org.example.client.SnowClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,9 +74,9 @@ public abstract class SyncHandler {
                 for (String key : mappingProperties.stringPropertyNames()) {
                     //logger.debug("{} key: {}", entityType,key);
                     String jsonPath = mappingProperties.getProperty(key);
-                    //logger.debug("{} jsonPath: {}",entityType, jsonPath);
+                    logger.debug("{} jsonPath: {}",entityType, jsonPath);
                     Object value = extractValue(item, jsonPath);
-                    logger.debug("Key {} value: {}", key, value);
+                    logger.debug("Key {} value: {}", key, value.toString());
                     entityMap.put(key, value);
                 }
                 entities.add(entityMap);
@@ -97,13 +98,25 @@ public abstract class SyncHandler {
         }
         return config;
     }
-    private static Object extractValue(JsonNode node, String jsonPath) {
+    protected Object extractValue(JsonNode node, String jsonPath) {
         JsonNode current = node;
+        logger.debug("Current : {}", node.toPrettyString());
+
+        if (jsonPath.startsWith("/")) {
+         jsonPath = jsonPath.substring(1);
+         }
         String[] tokens = jsonPath.split("/");
-        // System.out.println(Arrays.toString(tokens));
+
+        logger.debug("Tokens:{}",Arrays.toString(tokens));
+
+        // TESTING FIX Normalize the path first
+        //String normalizedPath = jsonPath.replace("//", "/");
+        // Split while preserving empty tokens
+        //String[] tokens = normalizedPath.split("/", -1);
+        // END TESTING FIX
         for (int i = 0; i < tokens.length; i++) {
             String part = tokens[i];
-            //System.out.println(part);
+            logger.debug("Part:{}",part);
             // If the current token is empty, combine it with the next token
             // so that a path like "//entitlement" becomes "/entitlement".
             if (part.isEmpty()) {
@@ -116,7 +129,7 @@ public abstract class SyncHandler {
             }
             current = current.path(part);
         }
-
+        logger.debug("Current : {}", current.toPrettyString());
         // Return primitive or textual values properly
         if (current.isTextual())  return current.asText();
         if (current.isNumber())   return current.numberValue();

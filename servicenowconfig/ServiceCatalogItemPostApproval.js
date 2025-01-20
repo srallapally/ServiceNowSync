@@ -3,7 +3,8 @@ try {
     var client_secret = gs.getProperty('ping.client_secret');
     var scope = gs.getProperty('ping.oauth.scope');
     var tenant_url = gs.getProperty('ping.tenant_url');
-
+    var requestTypeId = gs.getProperty("ping.entitlement.request_type");
+    var workflowId = gs.getProperty("ping.entitlement.workflowid");
     var r = new sn_ws.RESTMessageV2('Ping AIC Token', 'Default POST');
     r.setStringParameterNoEscape('client_id', client_id);
     r.setStringParameterNoEscape('scope', scope);
@@ -35,16 +36,20 @@ try {
     apv.addQuery('sysapproval', current.sys_id);
     apv.query();
     while (apv.next()) { // Go through all approvals with comments
-        var comments = apv.comments.getJournalEntries(); // Get all journal entries for the comments field
         var approverHistory = "Approval Comments: from " + apv.approver.name;
-        // Iterate through each comment entry
-        comments.forEach(function(entry) {
-            approverHistory += "\n" + entry.toString();
-        });
+        var commentGr = new GlideRecord('sys_journal_field');
+        commentGr.addQuery('element_id', current.sys_id);
+        commentGr.addQuery('element', 'comments');
+        commentGr.orderBy('sys_created_on');
+        commentGr.query();
+        while(commentGr.next()){
+            approverHistory += commentGr.value.toString();
+        }
         arr.push(approverHistory);
     }
     var approver_hist = arr.join('\n');
     details += approver_hist + "\n";
+    gs.log("Request Details:\n"+ details,"Ping RITM Post Approval Info");
     // Invoke IGA Workflow
     var getUserRequest = new sn_ws.RESTMessageV2();
     getUserRequest.setLogLevel('All');
@@ -71,13 +76,12 @@ try {
         userDetails += userId +"\n";
         userDetails += userName +"\n";
         userDetails += userEmail +"\n";
-        gs.log("IDM Response "+ userDetails,"Ping RITM Post Approval Info");
     }
     gs.log("Submitting request to Ping","Ping IGA Submission");
 
     var oPingRequest = new sn_ws.RESTMessageV2();
     oPingRequest.setLogLevel('All');
-    var request_url = tenant_url+"/iga/governance/requests/aec41b5b-8331-4b38-a838-eb1779692e28";
+    var request_url = tenant_url+"/iga/governance/requests/"+requestTypeId;
     oPingRequest.setEndpoint(request_url);
     oPingRequest.setQueryParameter('_action','publish');
     oPingRequest.setHttpMethod("POST");
@@ -88,7 +92,7 @@ try {
             priority: "low",
             externalRequestId: ritmId,
             isDraft: false,
-            workflowId: "snowGrantEntitlement",
+            workflowId:workflowId,
             context: {
                 type: "service-now"
             }
@@ -107,4 +111,5 @@ try {
 }
 catch(ex) {
     var message = ex.message;
+    gs.log("Error in script\n"+message,"Ping RITM Post Approval Info");
 }

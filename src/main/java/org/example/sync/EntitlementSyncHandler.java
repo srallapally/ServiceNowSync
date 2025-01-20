@@ -42,6 +42,7 @@ public class EntitlementSyncHandler extends SyncHandler {
 
     @Override
     protected String getMapping() {
+        logger.debug("Mapping file:{}",config.getProperty("snow.entitlement.catalog.mapping"));
         return config.getProperty("snow.entitlement.catalog.mapping");
     }
 

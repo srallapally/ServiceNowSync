@@ -1,5 +1,4 @@
 package org.example;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.auth.PingAuthenticator;
 import org.example.auth.SnowAuthenticator;
 import org.example.client.SnowClient;
@@ -18,7 +17,6 @@ public class PingSnowSync {
     private static String pingAccessToken;
     private static Properties config;
     private static SnowClient snowClient;
-    private static final ObjectMapper mapper = new ObjectMapper();
     private static final Logger logger = LoggerFactory.getLogger(PingSnowSync.class);
     private static Boolean TESTMODE = false;
     private static Boolean syncApp = false;
