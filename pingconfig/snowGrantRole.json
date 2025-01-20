@@ -1,0 +1,301 @@
+{
+  "id": "snowGrantRole",
+  "name": "SNOW Grant Role",
+  "displayName": "SNOW Grant Role",
+  "description": "SNOW Grant Role",
+  "type": "provisioning",
+  "_rev": 4,
+  "steps": [
+    {
+      "name": "approvalTask-74cf85c35437",
+      "displayName": "Approval Task",
+      "type": "approvalTask",
+      "approvalTask": {
+        "nextStep": [
+          {
+            "condition": null,
+            "outcome": "EXPIRATION",
+            "step": null
+          },
+          {
+            "condition": null,
+            "outcome": "APPROVE",
+            "step": "scriptTask-3eab1948f1ec"
+          },
+          {
+            "condition": null,
+            "outcome": "REJECT",
+            "step": "scriptTask-aec6c36b3a45"
+          }
+        ],
+        "approvalMode": "any",
+        "actors": [
+          {
+            "id": {
+              "value": "(function() {\n    var systemSettings = openidm.action('iga/commons/config/iga_access_request', 'GET', {}, {});\n    var approver = null;\n    if (requestIndex.roleOwner && requestIndex.roleOwner[0]) {\n        approver = \"managed/user/\" + requestIndex.roleOwner[0].id;\n    } else if (systemSettings && systemSettings.defaultApprover) {\n        approver = systemSettings.defaultApprover;\n    }\nreturn approver;\n})()",
+              "isExpression": true
+            },
+            "permissions": {
+              "approve": true,
+              "reject": true,
+              "reassign": true,
+              "modify": true,
+              "comment": true
+            }
+          }
+        ],
+        "events": {
+          "assignment": {
+            "notification": "requestAssigned"
+          },
+          "reassign": {
+            "notification": "requestReassigned"
+          },
+          "reminder": {
+            "notification": "requestReminder",
+            "frequency": 3,
+            "date": {
+              "isExpression": true,
+              "value": "(new Date(new Date().getTime()+(3*1*24*60*60*1000))).toISOString()"
+            }
+          },
+          "escalation": {
+            "notification": "requestEscalated",
+            "date": {
+              "isExpression": true,
+              "value": "(new Date(new Date().getTime()+(5*1*24*60*60*1000))).toISOString()"
+            },
+            "actors": [
+              {
+                "id": {
+                  "value": "(function() {\n    var systemSettings = openidm.action('iga/commons/config/iga_access_request', 'GET', {}, {});\n    var approver = null;\n    if (requestIndex.roleOwner && requestIndex.roleOwner[0]) {\n        approver = \"managed/user/\" + requestIndex.roleOwner[0].id;\n    } else if (systemSettings && systemSettings.defaultApprover) {\n        approver = systemSettings.defaultApprover;\n    }\nreturn approver;\n})()",
+                  "isExpression": true
+                }
+              }
+            ]
+          },
+          "expiration": {
+            "action": "reject",
+            "notification": "requestExpired",
+            "actors": [],
+            "date": {
+              "isExpression": true,
+              "value": "(new Date(new Date().getTime()+(7*24*60*60*1000))).toISOString()"
+            }
+          }
+        }
+      },
+      "approvalMode": "any"
+    },
+    {
+      "name": "scriptTask-3eab1948f1ec",
+      "displayName": "Role Grant Validation",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": "exclusiveGateway-48e748c42994"
+          }
+        ],
+        "language": "javascript",
+        "script": "logger.info(\"Running role grant request validation\");\n\nvar content = execution.getVariables();\nvar requestId = content.get('id');\nvar failureReason = null;\nvar roleId = null;\nvar role = null;\n\ntry {\n  var requestObj = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\n  roleId = requestObj.request.custom.roleId;\n}\ncatch (e) {\n  failureReason = \"Validation failed: Error reading request with id \" + requestId;\n}\n\n// Validation 1 - Check role exists\nif (!failureReason) {\n  try {\n    role = openidm.read('managed/alpha_role/' + roleId);\n    if (!role) {\n      failureReason = \"Validation failed: Cannot find role with id \" + roleId;\n    }\n  }\n  catch (e) {\n    failureReason = \"Validation failed: Error reading role with id \" + roleId + \". Error message: \" + e.message;\n  }\n}\n\nif (failureReason) {\n  logger.info(\"Validation failed: \" + failureReason);\n}\nexecution.setVariable(\"failureReason\", failureReason); "
+      }
+    },
+    {
+      "name": "exclusiveGateway-48e748c42994",
+      "displayName": "Validation Gateway",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "failureReason == null",
+            "outcome": "validationFlowSuccess",
+            "step": "scriptTask-0359a9d77ee2"
+          },
+          {
+            "condition": "failureReason != null",
+            "outcome": "validationFlowFailure",
+            "step": "scriptTask-0b56191887de"
+          }
+        ],
+        "language": "javascript",
+        "script": "logger.info(\"This is exclusive gateway\");"
+      }
+    },
+    {
+      "name": "scriptTask-0b56191887de",
+      "displayName": "Role Grant Validation Failure",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": null
+          }
+        ],
+        "language": "javascript",
+        "script": "var content = execution.getVariables();\nvar requestId = content.get('id');\nvar failureReason = content.get('failureReason');\n\nvar decision = {'outcome': 'not provisioned', 'status': 'complete', 'comment': failureReason, 'failure': true, 'decision': 'approved'};\nvar queryParams = { '_action': 'update'};\nopenidm.action('iga/governance/requests/' + requestId, 'POST', decision, queryParams);"
+      }
+    },
+    {
+      "name": "scriptTask-0359a9d77ee2",
+      "displayName": "Auto Provisioning",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": null
+          }
+        ],
+        "language": "javascript",
+        "script": "logger.info(\"Auto-Provisioning\");\n\nvar content = execution.getVariables();\nvar requestId = content.get('id');\nvar failureReason = null;\n\ntry {\n  var requestObj = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\n  logger.info(\"requestObj: \" + requestObj);\n}\ncatch (e) {\n  failureReason = \"Provisioning failed: Error reading request with id \" + requestId;\n}\n\nif(!failureReason) {\n  try {\n    var request = requestObj.request;\n    var payload = {\n      \"roleId\": request.custom.roleId,\n      \"startDate\": request.common.startDate,\n      \"endDate\": request.common.endDate,\n      \"auditContext\": {},\n      \"grantType\": \"request\"\n    };\n    var queryParams = {\n      \"_action\": \"add\"\n    }\n\n    var result = openidm.action('iga/governance/user/' + request.custom.userId + '/roles' , 'POST', payload,queryParams);\n  }\n  catch (e) {\n    failureReason = \"Provisioning failed: Error provisioning role to user \" + request.custom.userId + \" for role \" + request.custom.roleId + \". Error message: \" + e.message;\n  }\n  \n  var decision = {'status': 'complete', 'decision': 'approved'};\n  if (failureReason) {\n    decision.outcome = 'not provisioned';\n    decision.comment = failureReason;\n    decision.failure = true;\n  }\n  else {\n    decision.outcome = 'provisioned';\n  }\n\n  var queryParams = { '_action': 'update'};\n  openidm.action('iga/governance/requests/' + requestId, 'POST', decision, queryParams);\n  logger.info(\"Request \" + requestId + \" completed.\");\n}"
+      }
+    },
+    {
+      "name": "scriptTask-aec6c36b3a45",
+      "displayName": "Reject Request",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": null
+          }
+        ],
+        "language": "javascript",
+        "script": "logger.info(\"Rejecting request\");\n\nvar content = execution.getVariables();\nvar requestId = content.get('id');\n\nlogger.info(\"Execution Content: \" + content);\nvar requestIndex = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\nvar decision = {'outcome': 'denied', 'status': 'complete', 'decision': 'rejected'};\nvar queryParams = { '_action': 'update'};\nopenidm.action('iga/governance/requests/' + requestId, 'POST', decision, queryParams);"
+      }
+    },
+    {
+      "name": "scriptTask-d76490953517",
+      "displayName": "Request Context Check",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": "exclusiveGateway-8cd9decab2e4"
+          }
+        ],
+        "language": "javascript",
+        "script": "/*\nScript nodes are used to invoke APIs or execute business logic.\nYou can invoke governance APIs or IDM APIs.\nSee https://backstage.forgerock.com/docs/idcloud/latest/identity-governance/administration/workflow-configure.html for more details.\n\nScript nodes should return a single value and should have the\nlogic enclosed in a try-catch block.\n\nExample:\ntry {\n  var requestObj = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\n  applicationId = requestObj.application.id;\n}\ncatch (e) {\n  failureReason = 'Validation failed: Error reading request with id ' + requestId;\n}\n*/\nvar content = execution.getVariables();\nvar requestId = content.get('id');\nvar context = null;\nvar skipApproval = false;\nvar lineItemId = false;\ntry {\n  var requestObj = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\n  if (requestObj.request.common.context) {\n    context = requestObj.request.common.context.type;\n    lineItemId = requestObj.request.common.context.lineItemId;\n    if (context == 'admin') {\n      skipApproval = true;\n    }\n  }\n}\ncatch (e) {\n  logger.info(\"Request Context Check failed \"+e.message);\n}\n\nlogger.info(\"Context: \" + context);\nexecution.setVariable(\"context\", context);\nexecution.setVariable(\"lineItemId\", lineItemId);\nexecution.setVariable(\"skipApproval\", skipApproval);"
+      }
+    },
+    {
+      "name": "exclusiveGateway-8cd9decab2e4",
+      "displayName": "Context Gateway",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "skipApproval == true",
+            "outcome": "AutoApproval",
+            "step": "scriptTask-8506123e6208"
+          },
+          {
+            "condition": "skipApproval == false",
+            "outcome": "Approval",
+            "step": "approvalTask-74cf85c35437"
+          }
+        ],
+        "language": "javascript",
+        "script": "logger.info(\"This is exclusive gateway\");"
+      }
+    },
+    {
+      "name": "scriptTask-8506123e6208",
+      "displayName": "Auto Approval",
+      "type": "scriptTask",
+      "scriptTask": {
+        "nextStep": [
+          {
+            "condition": "true",
+            "outcome": "done",
+            "step": "scriptTask-3eab1948f1ec"
+          }
+        ],
+        "language": "javascript",
+        "script": "/*\nScript nodes are used to invoke APIs or execute business logic.\nYou can invoke governance APIs or IDM APIs.\nSee https://backstage.forgerock.com/docs/idcloud/latest/identity-governance/administration/workflow-configure.html for more details.\n\nScript nodes should return a single value and should have the\nlogic enclosed in a try-catch block.\n\nExample:\ntry {\n  var requestObj = openidm.action('iga/governance/requests/' + requestId, 'GET', {}, {});\n  applicationId = requestObj.application.id;\n}\ncatch (e) {\n  failureReason = 'Validation failed: Error reading request with id ' + requestId;\n}\n*/\nvar content = execution.getVariables();\nvar requestId = content.get('id');\nvar context = content.get('context');\nvar lineItemId = content.get('lineItemId');\nvar queryParams = {\n  \"_action\": \"update\"\n}\nvar lineItemParams = {\n  \"_action\": \"updateRemediationStatus\"\n}\ntry {\n  var decision = {\n      \"decision\": \"approved\",\n      \"comment\": \"Request auto-approved due to request context: \" + context\n  }\n  openidm.action('iga/governance/requests/' + requestId, 'POST', decision, queryParams);\n}\ncatch (e) {\n  var failureReason = \"Failure updating decision on request. Error message: \" + e.message;\n  var update = {'comment': failureReason, 'failure': true};\n  openidm.action('iga/governance/requests/' + requestId, 'POST', update, queryParams);\n\n}"
+      }
+    }
+  ],
+  "staticNodes": {
+    "startNode": {
+      "id": "startNode",
+      "x": 70,
+      "y": 140,
+      "connections": {
+        "start": "scriptTask-d76490953517"
+      }
+    },
+    "endNode": {
+      "id": "endNode",
+      "x": 1908,
+      "y": 218,
+      "connections": null
+    },
+    "uiConfig": {
+      "approvalTask-74cf85c35437": {
+        "actors": [
+          {
+            "type": "script",
+            "id": {
+              "value": "(function() {\n    var systemSettings = openidm.action('iga/commons/config/iga_access_request', 'GET', {}, {});\n    var approver = null;\n    if (requestIndex.roleOwner && requestIndex.roleOwner[0]) {\n        approver = \"managed/user/\" + requestIndex.roleOwner[0].id;\n    } else if (systemSettings && systemSettings.defaultApprover) {\n        approver = systemSettings.defaultApprover;\n    }\nreturn approver;\n})();",
+              "isExpression": true
+            }
+          }
+        ],
+        "events": {
+          "escalationType": "script",
+          "escalationDate": 5,
+          "escalationTimeSpan": "day(s)",
+          "reminderDate": 3,
+          "reminderTimeSpan": "day(s)"
+        },
+        "x": 724,
+        "y": 120
+      },
+      "scriptTask-3eab1948f1ec": {
+        "x": 942,
+        "y": 50.015625
+      },
+      "exclusiveGateway-48e748c42994": {
+        "x": 1205,
+        "y": 31.015625
+      },
+      "scriptTask-0b56191887de": {
+        "x": 1489,
+        "y": 149.015625
+      },
+      "scriptTask-0359a9d77ee2": {
+        "x": 1492,
+        "y": 68.015625
+      },
+      "scriptTask-aec6c36b3a45": {
+        "x": 941,
+        "y": 211.015625
+      },
+      "scriptTask-d76490953517": {
+        "x": 161,
+        "y": 142.015625
+      },
+      "exclusiveGateway-8cd9decab2e4": {
+        "x": 453,
+        "y": 120.015625
+      },
+      "scriptTask-8506123e6208": {
+        "x": 721,
+        "y": 41.015625
+      }
+    }
+  },
+  "status": "draft",
+  "mutable": true
+}

@@ -72,8 +72,6 @@ public class EntitlementSyncHandler extends SyncHandler {
             snowUrl = snowUrl.replace("%ping.entitlement.catalog_id%", catalogVal);
             logger.debug("After replacing Snow URL: {}", snowUrl);
             String snowResponse = snowClient.executeGet(snowUrl);
-            // logger.debug("Snow Response: {}", snowResponse);
-            //System.out.println(snowResponse);
             JsonNode snowItems = mapper.readTree(snowResponse).get("result");
 
             if (snowItems.isEmpty()) {
