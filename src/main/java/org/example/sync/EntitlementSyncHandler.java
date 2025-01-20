@@ -1,5 +1,8 @@
 package org.example.sync;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -9,6 +12,7 @@ import org.example.client.SnowClient;
 
 import java.io.FileInputStream;
 import java.io.InputStream;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Properties;
@@ -22,7 +26,7 @@ public class EntitlementSyncHandler extends SyncHandler {
 
     @Override
     public void sync() throws Exception {
-        logger.debug("Syncing entitlements...");
+        logger.info("Syncing entitlements...");
         executeSync();
     }
 
@@ -61,45 +65,83 @@ public class EntitlementSyncHandler extends SyncHandler {
         logger.debug("snowUrl: {}", snowUrl);
         String catalogVal = (String) entity.get(catalogAttr);
         logger.debug("catalogVal: {}", catalogVal);
-        if(catalogVal != null)
-            snowUrl = snowUrl.replace("%ping.entitlement.catalog_id%",catalogVal);
-        logger.debug("After replacing Snow URL: {}", snowUrl);
-        String snowResponse = snowClient.executeGet(snowUrl);
-        logger.debug("Snow Response: {}", snowResponse);
-        //System.out.println(snowResponse);
-        var snowItems = mapper.readTree(snowResponse).get("result");
+        if(catalogVal != null) {
+            // we need to handle spaces
+            catalogVal = URLEncoder.encode(catalogVal, StandardCharsets.UTF_8);
+            snowUrl = snowUrl.replace("%ping.entitlement.catalog_id%", catalogVal);
+            logger.debug("After replacing Snow URL: {}", snowUrl);
+            String snowResponse = snowClient.executeGet(snowUrl);
+            // logger.debug("Snow Response: {}", snowResponse);
+            //System.out.println(snowResponse);
+            JsonNode snowItems = mapper.readTree(snowResponse).get("result");
 
-        if (snowItems.isEmpty()) {
-            logger.debug("No snow items found");
-            entity.put("snow.tenanturl",String.valueOf(config.getProperty("snow.tenanturl")));
-            entity.put("snow.entitlement.category",String.valueOf(config.getProperty("snow.entitlement.category")));
-            entity.put("snow.catalogId",String.valueOf(config.getProperty("snow.catalogId")));
-            String itemJson = processTemplate(entity);
-            logger.debug("ItemJson: {}", itemJson);
-            String snowCreateUrl = config.getProperty("snow.tenanturl")+config.getProperty("snow.catalog.create");
-            String postResponse = snowClient.createSnowItem(snowCreateUrl,itemJson,testmode);
-            if(testmode){
-                logger.debug("TESTMODE skipped creation");
-            } else {
-                logger.debug("Item postResponse: {}", postResponse);
+            if (snowItems.isEmpty()) {
+                logger.debug("No snow items found");
+                entity.put("snow.tenanturl", String.valueOf(config.getProperty("snow.tenanturl")));
+                entity.put("snow.entitlement.category", String.valueOf(config.getProperty("snow.entitlement.category")));
+                entity.put("snow.catalogId", String.valueOf(config.getProperty("snow.catalogId")));
+                String itemJson = processTemplate(entity);
+                logger.debug("ItemJson: {}", itemJson);
+                String snowCreateUrl = config.getProperty("snow.tenanturl") + config.getProperty("snow.catalog.create");
+                String postResponse = snowClient.createSnowItem(snowCreateUrl,itemJson,testmode);
+                if (testmode) {
+                    logger.info("TESTMODE skipped creation");
+                }
+                else {
+                    logger.info("Item postResponse: {}", postResponse);
+                }
+            } else if(snowItems.size() > 1 && !snowItems.isEmpty()) {
+                logger.error("Multiple snow items found");
+            } else if(snowItems.size() == 1 && !snowItems.isEmpty()) {
+                JsonNode snowItem = snowItems.get(0);
+                String snowId = snowItem.get("sys_id").asText();
+                logger.debug("snowId: {}", snowId);
+                // Create JSON payload
+                ObjectNode jsonNode = mapper.createObjectNode();
+                entity.forEach((key, value) -> {
+                    if (value == null) {
+                        jsonNode.putNull(key);
+                    } else if (value instanceof String) {
+                        jsonNode.put(key, (String) value);
+                    } else if (value instanceof Integer) {
+                        jsonNode.put(key, (Integer) value);
+                    } else if (value instanceof Boolean) {
+                        jsonNode.put(key, (Boolean) value);
+                    } else if (value instanceof Double) {
+                        jsonNode.put(key, (Double) value);
+                    } else if (value instanceof Long) {
+                        jsonNode.put(key, (Long) value);
+                    } else {
+                        // For any other type, convert to string representation
+                        jsonNode.put(key, value.toString());
+                    }
+                });
+                // Set the request body
+                StringEntity updateEntity = new StringEntity(mapper.writeValueAsString(jsonNode));
+                String snowUpdateUrl = config.getProperty("snow.tenanturl") + config.getProperty("snow.catalog.update");
+                snowUpdateUrl = snowUpdateUrl.replace("%sys_id%",snowId);
+                String patchResponse = snowClient.updateSnowItem(snowUpdateUrl, updateEntity,testmode);
+                if (testmode) {
+                    logger.info("TESTMODE skipped update");
+                }
+                else {
+                    logger.info("Item postResponse: {}", patchResponse);
+                }
             }
         } else {
-            System.out.println("Found " + snowItems.size() + " snow items");
-            // Update existing item
-            //String sysId = snowItems.get(0).get("sys_id").asText();
-            //updateSnowItem(sysId, itemJson);
+            logger.error("Linking attribute was null. Check configuration");
         }
-        System.out.println("Sleeping");
+        //System.out.println("Sleeping");
         TimeUnit.SECONDS.toMillis(2);
 
     }
 
     @Override
     protected String executePingQuery(String url, String query) throws Exception {
-        logger.debug("Executing Ping Query");
+        logger.info("Executing Ping Query");
         logger.debug("url: {}", url);
         logger.debug("query: {}", query);
-        logger.debug("Access Token:{}",pingAccessToken);
+        //logger.debug("Access Token:{}",pingAccessToken);
         try (CloseableHttpClient client = HttpClients.createDefault()) {
             HttpPost request = new HttpPost(url);
             request.addHeader("Authorization", "Bearer " + pingAccessToken);

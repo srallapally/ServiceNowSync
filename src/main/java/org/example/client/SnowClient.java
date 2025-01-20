@@ -1,5 +1,6 @@
 package org.example.client;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
@@ -49,6 +50,23 @@ public class SnowClient {
         }
     }
 
+    public String executePatch(String url, StringEntity jsonBody) throws Exception {
+        logger.debug("Executing PATCH request to URL: {}", url);
+
+        HttpPost request = new HttpPost(url);
+        request.addHeader("Content-Type", "application/json");
+        request.addHeader("Accept", "application/json");
+        request.setEntity(jsonBody);
+
+        try (CloseableHttpResponse response = httpClient.execute(request)) {
+            int statusCode = response.getStatusLine().getStatusCode();
+            if (statusCode != 200) { // Assuming 201 Created for POST
+                throw new RuntimeException("ServiceNow PATCH request failed with status code: " + statusCode);
+            }
+            return EntityUtils.toString(response.getEntity());
+        }
+    }
+
     public String createSnowItem(String url, String jsonBody, Boolean testmode) throws Exception {
         logger.debug("Snow URL: {}", url);
         logger.debug("Creating Snow Item");
@@ -59,5 +77,19 @@ public class SnowClient {
             logger.debug("Skipping snow item creation due to test mode");
         }
         return null;
+    }
+
+    public String updateSnowItem(String snowUpdateUrl,StringEntity jsonNode, Boolean testmode) throws Exception{
+        logger.debug("Updating Snow Item");
+        logger.debug("Snow URL: {}", snowUpdateUrl);
+        logger.debug("Updating Snow Item");
+        logger.debug("jsonBody: {}", EntityUtils.toString(jsonNode));
+        if(!testmode) {
+            return executePatch(snowUpdateUrl, jsonNode);
+        } else {
+            logger.debug("Skipping snow item update due to test mode");
+        }
+        return null;
+
     }
 }

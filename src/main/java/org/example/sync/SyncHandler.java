@@ -8,7 +8,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public abstract class SyncHandler {
@@ -41,10 +40,10 @@ public abstract class SyncHandler {
         logger.debug("Starting sync for {}", entityType);
         String queryTemplate = getQueryTemplate();
         String queryBody = getQueryBody();
-        logger.debug("queryTemplate: {}", queryTemplate);
-        logger.debug("queryBody: {}", queryBody);
+        //logger.debug("queryTemplate: {}", queryTemplate);
+        //logger.debug("queryBody: {}", queryBody);
         String mappingFile = getMapping();
-        logger.debug("mappingJson: {}", mappingFile);
+        //logger.debug("mappingJson: {}", mappingFile);
         Properties mappingProperties = loadConfig(new File(mappingFile));
 
         int offset = 0;
@@ -53,17 +52,18 @@ public abstract class SyncHandler {
 
         while (hasMore) {
             String query = queryTemplate.replace("%offset%", String.valueOf(offset));
-            logger.debug("Query for {}: {}", entityType, query);
+            logger.info("Query for {}: {}", entityType, query);
             String pingResponse = executePingQuery(query,queryBody);
-            //logger.debug("Ping response: {}", pingResponse);
+           // logger.debug("Ping response: {}", pingResponse);
             JsonNode pingItems = mapper.readTree(pingResponse).path("result");
-            String totalCount = null;
-            totalCount = mapper.readTree(pingResponse).get("totalCount").asText();
-            logger.debug("totalCount: {}", totalCount);
-            if(totalCount == null) {
-                totalCount = "0";
-            }
-            if (pingItems.isEmpty() || offset >= Integer.parseInt(totalCount) ) {
+           int totalCount = 0;
+           try {
+               totalCount = Integer.parseInt(mapper.readTree(pingResponse).get("totalCount").asText());
+               logger.info("totalCount: {}", totalCount);
+           } catch (Exception e){
+               totalCount = 0;
+           }
+            if (pingItems.isEmpty() || offset >= totalCount ) {
                 hasMore = false;
                 continue;
             }
@@ -71,17 +71,18 @@ public abstract class SyncHandler {
             for (JsonNode item : pingItems) {
                 Map<String, Object> entityMap = new HashMap<>();
                 for (String key : mappingProperties.stringPropertyNames()) {
-                    logger.debug("{} key: {}", entityType,key);
+                    //logger.debug("{} key: {}", entityType,key);
                     String jsonPath = mappingProperties.getProperty(key);
-                    logger.debug("{} jsonPath: {}",entityType, jsonPath);
+                    //logger.debug("{} jsonPath: {}",entityType, jsonPath);
                     Object value = extractValue(item, jsonPath);
+                    logger.debug("Key {} value: {}", key, value);
                     entityMap.put(key, value);
                 }
                 entities.add(entityMap);
             }
             offset += Integer.parseInt(config.getProperty("ping.catalog.offset"));
         }
-        logger.debug("Collected  {} {}s", entities.size(),entityType);
+        logger.info("Collected  {} {}s", entities.size(),entityType);
         for (Map<String, Object> entity : entities) {
             processEntity(entity);
         }
@@ -96,19 +97,31 @@ public abstract class SyncHandler {
         }
         return config;
     }
-
-    private Object extractValue(JsonNode node, String jsonPath) {
+    private static Object extractValue(JsonNode node, String jsonPath) {
         JsonNode current = node;
-        for (String part : jsonPath.split("/")) {
-            if (!part.isEmpty()) {
-                current = current.path(part);
+        String[] tokens = jsonPath.split("/");
+        // System.out.println(Arrays.toString(tokens));
+        for (int i = 0; i < tokens.length; i++) {
+            String part = tokens[i];
+            //System.out.println(part);
+            // If the current token is empty, combine it with the next token
+            // so that a path like "//entitlement" becomes "/entitlement".
+            if (part.isEmpty()) {
+                if (i + 1 < tokens.length) {
+                    part = "/" + tokens[++i];
+                } else {
+                    // No next token to combine; break or return null as needed
+                    break;
+                }
             }
+            current = current.path(part);
         }
 
-        if (current.isTextual()) return current.asText();
-        if (current.isNumber()) return current.numberValue();
-        if (current.isBoolean()) return current.asBoolean();
-        if (current.isArray()) return current.toString();
+        // Return primitive or textual values properly
+        if (current.isTextual())  return current.asText();
+        if (current.isNumber())   return current.numberValue();
+        if (current.isBoolean())  return current.asBoolean();
+        if (current.isArray())    return current.toString();
         return current.toString();
     }
 
