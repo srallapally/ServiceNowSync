@@ -3,6 +3,7 @@ package org.example.client;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPatch;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -53,7 +54,7 @@ public class SnowClient {
     public String executePatch(String url, StringEntity jsonBody) throws Exception {
         logger.debug("Executing PATCH request to URL: {}", url);
 
-        HttpPost request = new HttpPost(url);
+        HttpPatch request = new HttpPatch(url);
         request.addHeader("Content-Type", "application/json");
         request.addHeader("Accept", "application/json");
         request.setEntity(jsonBody);
